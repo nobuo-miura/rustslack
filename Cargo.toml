@@ -1,11 +1,13 @@
 [package]
 name = "rustslack"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 authors = ["Nobuo Miura"]
 description = "Slack API for Rust"
 readme = "README.md"
 license = "MIT"
+keywords = ["slack"]
+repository = "https://github.com/nobuo-miura/rustslack"
 
 [dependencies]
 reqwest = { version = "0.12.3", features = ["json"] }
