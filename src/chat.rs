@@ -93,13 +93,19 @@ pub struct ChatPostMessageField {
 
 pub trait Chat {
     /// Posts a message to a channel.
-    fn post_message(&self, arguments: ChatPostMessageArguments) -> Pin<Box<dyn Future<Output=Result<String, SlackApiError>> + Send + '_>>;
+    fn post_message(&self, arguments: ChatPostMessageArguments) -> Result<String, SlackApiError>;
+    /// Posts a message to a channel asynchronously.
+    fn post_message_async(&self, arguments: ChatPostMessageArguments) -> Pin<Box<dyn Future<Output=Result<String, SlackApiError>> + Send + '_>>;
 }
 
 /// Implement the Chat trait for SlackClient.
 impl Chat for SlackClient {
+    fn post_message(&self, arguments: ChatPostMessageArguments) -> Result<String, SlackApiError> {
+        self.runtime.block_on(self.post_message_async(arguments))
+    }
+
     /// Posts a message to a channel.
-    fn post_message(&self, arguments: ChatPostMessageArguments) -> Pin<Box<dyn Future<Output=Result<String, SlackApiError>> + Send + '_>> {
+    fn post_message_async(&self, arguments: ChatPostMessageArguments) -> Pin<Box<dyn Future<Output=Result<String, SlackApiError>> + Send + '_>> {
 
         // Check if the text, attachments, or blocks fields are provided
         if arguments.text.is_none() && arguments.attachments.is_none() && arguments.blocks.is_none() {
