@@ -17,13 +17,12 @@ rustslack = { git = "https://github.com/nobuo-miura/rustslack.git", branch = "ma
 
 ## Sample
 
-
+- chat.postMessage
 
 ```rust
 use rustslack::{SlackClient, Chat, ChatPostMessageArguments};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // Slack Token
     let client = SlackClient::new("xoxb-*****************".to_string());
 
@@ -34,9 +33,9 @@ async fn main() {
         ..Default::default()
     };
 
-    match client.post_message(arguments).await {
-        Ok(response) => println!("Success: {:?}", response),
-        Err(e) => eprintln!("Error: {:?}", e),
+    match client.post_message(arguments) {
+        Ok(response) => println!("Message sent successfully: {}", response),
+        Err(e) => eprintln!("Error sending message: {:?}", e),
     }
 }
 ```
