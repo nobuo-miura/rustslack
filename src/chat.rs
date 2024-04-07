@@ -91,20 +91,71 @@ pub struct ChatPostMessageField {
     pub short: bool,
 }
 
+/// Chat trait for the Slack API client.
 pub trait Chat {
-    /// Posts a message to a channel.
+    /// Deletes a message from a channel.
+    ///
+    /// <https://api.slack.com/methods/chat.delete>
+    fn delete(&self, channel: String, ts: String) -> Result<(), SlackApiError>;
+
+    /// Deletes a message from a channel asynchronously.
+    ///
+    /// <https://api.slack.com/methods/chat.delete>
+    fn delete_async(&self, channel: String, ts: String) -> Pin<Box<dyn Future<Output=Result<(), SlackApiError>> + Send + '_>>;
+
+    /// Sends a message to a channel.
+    ///
+    /// <https://api.slack.com/methods/chat.postMessage>
     fn post_message(&self, arguments: ChatPostMessageArguments) -> Result<String, SlackApiError>;
-    /// Posts a message to a channel asynchronously.
+    /// Sends a message to a channel asynchronously.
+    ///
+    /// <https://api.slack.com/methods/chat.postMessage>
     fn post_message_async(&self, arguments: ChatPostMessageArguments) -> Pin<Box<dyn Future<Output=Result<String, SlackApiError>> + Send + '_>>;
+
+    /// Sends a message to a channel with text only.
+    fn post_message_text(&self, channel: String, text: String) -> Result<String, SlackApiError>;
+
+    /// Sends a message to a channel with text only asynchronously.
+    fn post_message_text_async(&self, channel: String, text: String) -> Pin<Box<dyn Future<Output=Result<String, SlackApiError>> + Send + '_>>;
 }
 
 /// Implement the Chat trait for SlackClient.
 impl Chat for SlackClient {
+    /// Deletes a message from a channel.
+    fn delete(&self, channel: String, ts: String) -> Result<(), SlackApiError> {
+        self.runtime.block_on(self.delete_async(channel, ts))
+    }
+
+    /// Deletes a message from a channel asynchronously.
+    fn delete_async(&self, channel: String, ts: String) -> Pin<Box<dyn Future<Output=Result<(), SlackApiError>> + Send + '_>> {
+        let client = self.client.clone();
+        let token = self.token.clone();
+
+        Box::pin(async move {
+            let res = client.post("https://slack.com/api/chat.delete")
+                .bearer_auth(&token)
+                .form(&[("channel", &channel), ("ts", &ts)])
+                .send()
+                .await
+                .map_err(SlackApiError::from)?
+                .error_for_status()
+                .map_err(SlackApiError::from)?;
+
+            let body: Value = res.json().await.map_err(SlackApiError::from)?;
+            if body["ok"].as_bool().unwrap_or(false) {
+                Ok(())
+            } else {
+                Err(SlackApiError::InvalidArgument("Failed to delete message".into()))
+            }
+        })
+    }
+
+    /// Posts a message to a channel.
     fn post_message(&self, arguments: ChatPostMessageArguments) -> Result<String, SlackApiError> {
         self.runtime.block_on(self.post_message_async(arguments))
     }
 
-    /// Posts a message to a channel.
+    /// Posts a message to a channel asynchronously.
     fn post_message_async(&self, arguments: ChatPostMessageArguments) -> Pin<Box<dyn Future<Output=Result<String, SlackApiError>> + Send + '_>> {
 
         // Check if the text, attachments, or blocks fields are provided
@@ -112,10 +163,13 @@ impl Chat for SlackClient {
             return Box::pin(async { Err(SlackApiError::InvalidArgument("text, attachments, or blocks is required".into())) });
         }
 
+        let client = self.client.clone();
+        let token = self.token.clone();
+
         // Send the request to the Slack API
         Box::pin(async move {
-            let res = self.client.post("https://slack.com/api/chat.postMessage")
-                .bearer_auth(&self.token)
+            let res = client.post("https://slack.com/api/chat.postMessage")
+                .bearer_auth(token)
                 .json(&arguments)
                 .send()
                 .await
@@ -132,6 +186,21 @@ impl Chat for SlackClient {
             Ok(message_id)
         })
     }
+
+    /// Sends a message to a channel with text only.
+    fn post_message_text(&self, channel: String, text: String) -> Result<String, SlackApiError> {
+        self.runtime.block_on(self.post_message_text_async(channel, text))
+    }
+
+    /// Sends a message to a channel with text only asynchronously.
+    fn post_message_text_async(&self, channel: String, text: String) -> Pin<Box<dyn Future<Output=Result<String, SlackApiError>> + Send + '_>> {
+        let arguments = ChatPostMessageArguments {
+            channel,
+            text: Option::from(text),
+            ..Default::default()
+        };
+        self.post_message_async(arguments)
+    }
 }
 
 
@@ -141,8 +210,8 @@ mod chat_tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn chat_post_message() {
+    #[test]
+    fn chat_post_message_and_delete() {
         let token = env::var("SLACK_TOKEN").expect("Expected a token in the environment");
         let channel_id = env::var("SLACK_CHANNEL_ID").expect("Expected a channel id in the environment");
         let text = "Hello, Slack from Rust!";
@@ -154,7 +223,31 @@ mod chat_tests {
             ..Default::default()
         };
 
-        let result = client.post_message(arguments).await;
-        assert!(result.is_ok(), "Failed to post message");
+        // Post a message to the channel
+        let post = client.post_message(arguments);
+        assert!(post.is_ok(), "Failed to post message");
+
+        // Delete the message from the channel
+        let message_id = post.unwrap();
+        let delete = client.delete(channel_id, message_id);
+        assert!(delete.is_ok(), "Failed to delete message");
+    }
+
+    #[test]
+    fn chat_post_message_txt_and_delete() {
+        let token = env::var("SLACK_TOKEN").expect("Expected a token in the environment");
+        let channel_id = env::var("SLACK_CHANNEL_ID").expect("Expected a channel id in the environment");
+        let text = "Hello, Slack from Rust!";
+
+        let client = SlackClient::new(token.to_string());
+
+        // Post a message to the channel
+        let post = client.post_message_text(channel_id.to_string(), text.to_string());
+        assert!(post.is_ok(), "Failed to post message");
+
+        // Delete the message from the channel
+        let message_id = post.unwrap();
+        let delete = client.delete(channel_id, message_id);
+        assert!(delete.is_ok(), "Failed to delete message");
     }
 }

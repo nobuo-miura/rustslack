@@ -1,6 +1,7 @@
+use std::sync::Arc;
+
 use reqwest::Client;
 use tokio::runtime::Runtime;
-use std::sync::Arc;
 
 /// Slack API client.
 pub struct SlackClient {
